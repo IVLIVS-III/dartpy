@@ -1,10 +1,14 @@
+import 'dart:ffi' as ffi;
 import 'dart:io';
+import 'dart:io' as io show Platform;
+
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:path_provider/path_provider.dart';
 
 import 'gen.dart';
 
-import 'dart:ffi' as ffi;
 export 'gen.dart';
-import 'dart:io' as io show Platform;
+
 part 'globals.dart';
 
 /// A variable to override the python dynamic library location on your computer
@@ -55,6 +59,31 @@ String _findWindows() {
   }
   throw UnimplementedError(
       'Window python version not found, searched for Python 3.8 and 3.9, set pyLibLocation for custom install location');
+}
+
+Future<void> initializeFromAssets() async {
+  late final String libName;
+  if (io.Platform.isLinux) {
+    libName = 'libpython3.9.so';
+  } else if (io.Platform.isMacOS) {
+    libName = 'libpython3.9.dylib';
+  } else if (io.Platform.isWindows) {
+    libName = 'python39.dll';
+  } else {
+    throw UnimplementedError('${io.Platform} not supported');
+  }
+
+  final supportDirectory = await getApplicationSupportDirectory();
+  const pathOffset = '/dartpy/python/';
+  final copiedLibFile = File(supportDirectory.path + pathOffset + libName);
+
+  if (!copiedLibFile.existsSync()) {
+    copiedLibFile.createSync(recursive: true);
+    final content = await rootBundle.load('assets/python/$libName');
+    await copiedLibFile.writeAsBytes(content.buffer.asUint8List(), flush: true);
+  }
+
+  pyLibLocation = copiedLibFile.path;
 }
 
 DartPyC? _dartpyc;

@@ -10,6 +10,9 @@ dependencies:
   path: ^1.8.0
   ffi: ^1.0.0
   freezed_annotation: ^0.14.0
+  path_provider: ^2.0.9
+  flutter:
+    sdk: flutter
 
 dev_dependencies:
   pedantic: ^1.11.0
@@ -18,3 +21,10 @@ dev_dependencies:
   freezed: ^0.14.0
   build_runner: ^1.11.5
 
+flutter:
+  assets:
+    # TODO: add linux library to assets
+    # - assets/python/libpython3.9.so
+    - assets/python/libpython3.9.dylib
+    # TODO: add windows library to assets
+    # - assets/python/python39.dll
