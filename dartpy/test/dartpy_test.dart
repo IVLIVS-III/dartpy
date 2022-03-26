@@ -40,7 +40,7 @@ void main() {
     expect(
         () => dyn.no_such_method('Random argument'),
         throwsA(
-          isA<DartPyException>().having(
+          isA<PackageDartpyException>().having(
             (e) => e.message,
             'message',
             'Function no_such_method not found in module dartpy_test',

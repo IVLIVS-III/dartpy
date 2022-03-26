@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:io' as io show Platform;
 
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;
 import 'package:path_provider/path_provider.dart';
 
 import 'gen.dart';
@@ -62,6 +63,8 @@ String _findWindows() {
 }
 
 Future<void> initializeFromAssets() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   late final String libName;
   if (io.Platform.isLinux) {
     libName = 'libpython3.9.so';
@@ -80,7 +83,7 @@ Future<void> initializeFromAssets() async {
   if (!copiedLibFile.existsSync()) {
     copiedLibFile.createSync(recursive: true);
     final content = await rootBundle.load('assets/python/$libName');
-    await copiedLibFile.writeAsBytes(content.buffer.asUint8List(), flush: true);
+    await copiedLibFile.writeAsBytes(content.buffer.asUint8List());
   }
 
   pyLibLocation = copiedLibFile.path;

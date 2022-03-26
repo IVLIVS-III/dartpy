@@ -24,7 +24,7 @@ dev_dependencies:
 flutter:
   assets:
     # TODO: add linux library to assets
-    # - assets/python/libpython3.9.so
-    - assets/python/libpython3.9.dylib
+    # - lib/assets/python/libpython3.9.so
+    - lib/assets/python/libpython3.9.dylib
     # TODO: add windows library to assets
-    # - assets/python/python39.dll
+    # - lib/assets/python/python39.dll

@@ -1,8 +1,8 @@
-import 'dart:io';
 import 'dart:ffi';
-import 'package:ffi/ffi.dart';
+import 'dart:io';
 
 import 'package:dartpy/dartpy.dart';
+import 'package:ffi/ffi.dart';
 
 late Pointer<PyModuleDef> module;
 void main(List<String> args) {
@@ -37,7 +37,7 @@ void main(List<String> args) {
     final result = pFunc([1, 2]);
 
     print(result);
-  } on DartPyException catch (e) {
+  } on PackageDartpyException catch (e) {
     print(e);
     // Cleans up memory
     pyCleanup();

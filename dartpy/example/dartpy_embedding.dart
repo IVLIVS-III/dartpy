@@ -14,7 +14,7 @@ void main(List<String> args) {
     // calls the function and gets the result
     final result = pFunc(args.skip(2).map((a) => int.parse(a)).toList());
     print(result);
-  } on DartPyException catch (e) {
+  } on PackageDartpyException catch (e) {
     print(e);
     // Cleans up memory
     pyCleanup();

@@ -1,10 +1,12 @@
-export 'primitives.dart';
-export 'collections.dart';
-
 import 'dart:ffi';
+
+import 'package:ffi/ffi.dart';
 
 import '../../dartpy_base.dart';
 import '../bool_functions.dart';
+
+export 'collections.dart';
+export 'primitives.dart';
 
 /// Converts a Dart object to the python equivalent
 ///
@@ -54,19 +56,32 @@ Object? pyConvertBackDynamic(Pointer<PyObject> result) {
     dartpyc.Py_DecRef(result);
     return false;
   } else {
+    final resultNameString =
+        result.ref.ob_type.ref.tp_name.cast<Utf8>().toDartString();
+    try {
+      switch (resultNameString) {
+        case 'str':
+          final res = dartpyc.PyUnicode_AsUTF8String(result).asString;
+          dartpyc.Py_DecRef(result);
+          return res;
+      }
+    } on PackageDartpyException catch (_) {
+      dartpyc.PyErr_Clear();
+      print('Error while trying to convert via name string detection');
+    }
     try {
       final res = result.asNum;
       dartpyc.Py_DecRef(result);
       return res;
-    } on DartPyException catch (_) {
+    } on PackageDartpyException catch (_) {
       dartpyc.PyErr_Clear();
       try {
         final res = result.asString;
         dartpyc.Py_DecRef(result);
         return res;
-      } on DartPyException catch (_) {
+      } on PackageDartpyException catch (_) {
         dartpyc.PyErr_Clear();
-        throw DartPyException(
+        throw PackageDartpyException(
             'Could not figure out the type of the object to convert back to: not a known primitive');
       }
     }

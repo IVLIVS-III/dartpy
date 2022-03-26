@@ -2,6 +2,7 @@ import 'dart:ffi';
 
 import 'package:dartpy/src/ffi/gen.dart';
 import 'package:ffi/ffi.dart';
+
 import '../../dartpy_base.dart';
 
 extension PyInt on int {
@@ -71,7 +72,7 @@ extension PrimitivesConversion on Pointer<PyObject> {
       dartpyc.Py_DecRef(this);
       return res;
     }
-    throw DartPyException('Error in converting to an dart int');
+    throw PackageDartpyException('Error in converting to an dart int');
   }
 
   /// Converts a python double to a dart double
@@ -81,7 +82,7 @@ extension PrimitivesConversion on Pointer<PyObject> {
       dartpyc.Py_DecRef(this);
       return res;
     }
-    throw DartPyException('Error in converting to a dart double');
+    throw PackageDartpyException('Error in converting to a dart double');
   }
 
   /// Converts a python int or double to a dart number
@@ -95,18 +96,27 @@ extension PrimitivesConversion on Pointer<PyObject> {
       } else {
         return i;
       }
-    } on DartPyException catch (_) {
-      throw DartPyException('Error in converting to a dart num');
+    } on PackageDartpyException catch (_) {
+      throw PackageDartpyException('Error in converting to a dart num');
     }
   }
 
   String get asString {
+    print('trying to convert detected string from type name: ' +
+        ref.ob_type.ref.tp_name.cast<Utf8>().toDartString());
     final res = dartpyc.PyBytes_AsString(this);
+
+    // check for errors
+    final errorPtr = dartpyc.PyErr_Occurred();
+    if (errorPtr != nullptr) {
+      throw DartPyException(errorPtr);
+    }
+
     if (!pyErrOccurred()) {
       dartpyc.Py_DecRef(this);
       final str = res.cast<Utf8>().toDartString();
       return str;
     }
-    throw DartPyException('Error in converting to a dart String');
+    throw PackageDartpyException('Error in converting to a dart String');
   }
 }

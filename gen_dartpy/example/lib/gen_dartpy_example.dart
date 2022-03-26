@@ -1,5 +1,6 @@
 import 'package:dartpy/dartpy.dart';
 import 'package:dartpy/dartpy_annotations.dart';
+
 part 'gen_dartpy_example.g.dart';
 
 @PyFunction(module: 'multiply')
@@ -17,7 +18,7 @@ void main() {
     print(mult_double(6.13, 5.2));
     print(mult_num(6, 5.2));
     print(mult_num(6, 2));
-  } on DartPyException catch (e) {
+  } on PackageDartpyException catch (e) {
     if (pyErrOccurred()) {
       dartpyc.PyErr_Print();
     }
