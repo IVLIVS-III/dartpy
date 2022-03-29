@@ -3,17 +3,39 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import '../dartpy_base.dart';
-import 'dart_py_object.dart';
 
 /// A dart exception wrapping a python exception
 class DartPyException extends DartPyObject implements Exception {
-  DartPyException(Pointer<PyObject> pyException) : super(pyException);
+  DartPyException(Pointer<PyObject> pType, Pointer<PyObject> pValue,
+      Pointer<PyObject> pTraceback)
+      : pValue = pValue,
+        pTraceback = pTraceback,
+        super(pType);
 
-  Pointer<PyObject> get pyException => pyObject;
+  factory DartPyException.fetch() {
+    final pTypePtr = malloc<Pointer<PyObject>>();
+    final pValuePtr = malloc<Pointer<PyObject>>();
+    final pTracebackPtr = malloc<Pointer<PyObject>>();
+    dartpyc.PyErr_Fetch(pTypePtr, pValuePtr, pTracebackPtr);
+    final dartPyException =
+        DartPyException(pTypePtr.value, pValuePtr.value, pTracebackPtr.value);
+    malloc.free(pTypePtr);
+    malloc.free(pValuePtr);
+    malloc.free(pTracebackPtr);
+    return dartPyException;
+  }
+
+  Pointer<PyObject> get pType => pyObject;
+  final Pointer<PyObject> pValue;
+  final Pointer<PyObject> pTraceback;
 
   @override
   String toString() {
-    return 'DartPyException(${pyException.ref.ob_type.ref.tp_name.cast<Utf8>().toDartString()})';
+    print('trying to print DartPyException');
+    final typeRepr = dartpyc.PyObject_Repr(pType).asUnicodeString;
+    final valueRepr = dartpyc.PyObject_Repr(pValue).asUnicodeString;
+    final tracebackRepr = dartpyc.PyObject_Repr(pTraceback).asUnicodeString;
+    return 'DartPyException($typeRepr): $valueRepr\n$tracebackRepr';
   }
 }
 

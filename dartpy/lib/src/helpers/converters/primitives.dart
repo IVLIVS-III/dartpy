@@ -30,8 +30,15 @@ extension PyString on String {
   /// Converts a String to a python bytes object
   PythonString asPyBytes() {
     final allocated = toNativeUtf8();
-    return PythonString(
-        dartpyc.PyBytes_FromString(allocated.cast<Int8>()), allocated);
+    final unicodeObject = dartpyc.PyUnicode_FromString(allocated.cast<Int8>());
+    return PythonString(dartpyc.PyBytes_FromObject(unicodeObject), allocated);
+  }
+
+  /// Converts a String to a python unicode object
+  PythonString asPyUnicode() {
+    final allocated = toNativeUtf8();
+    final unicodeObject = dartpyc.PyUnicode_FromString(allocated.cast<Int8>());
+    return PythonString(unicodeObject, allocated);
   }
 }
 
@@ -107,16 +114,16 @@ extension PrimitivesConversion on Pointer<PyObject> {
     final res = dartpyc.PyBytes_AsString(this);
 
     // check for errors
-    final errorPtr = dartpyc.PyErr_Occurred();
-    if (errorPtr != nullptr) {
-      throw DartPyException(errorPtr);
-    }
+    ensureNoPythonError();
 
     if (!pyErrOccurred()) {
       dartpyc.Py_DecRef(this);
       final str = res.cast<Utf8>().toDartString();
+      print("converted to: $str");
       return str;
     }
     throw PackageDartpyException('Error in converting to a dart String');
   }
+
+  String get asUnicodeString => dartpyc.PyUnicode_AsUTF8String(this).asString;
 }

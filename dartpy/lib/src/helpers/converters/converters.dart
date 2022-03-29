@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
@@ -7,6 +8,36 @@ import '../bool_functions.dart';
 
 export 'collections.dart';
 export 'primitives.dart';
+
+String _toString(Pointer<PyObject> obj) {
+  return dartpyc.PyUnicode_AsUTF8String(obj).asString;
+}
+
+ByteData _toByteData(Pointer<PyObject> obj) {
+  final length = dartpyc.PySequence_Length(obj);
+  final bytes = ByteData(length);
+  for (var i = 0; i < length; i++) {
+    final item = dartpyc.PySequence_GetItem(obj, i);
+    bytes.setInt32(i, item.asInt);
+  }
+
+  return bytes;
+}
+
+Map<String, Object? Function(Pointer<PyObject>)> _fromPyObjectConversions =
+    <String, Object? Function(Pointer<PyObject>)>{
+  'str': _toString,
+  'bytes': _toByteData,
+};
+// TODO: extend the conversion method for other arbitrary objects
+//       necessary:
+//         - List<T>
+//         - Tuple<T> -> List<T>
+//         - Dict<T1, T2> -> Map<T1, T2>
+//         - Object -> WrappedPyObject
+//         - URL -> Uri
+//         - bytes -> ByteData
+//         - datetime.timedelta -> Duration
 
 /// Converts a Dart object to the python equivalent
 ///
@@ -26,13 +57,31 @@ PyObjAllocated pyConvertDynamic(Object? o) {
   } else if (o is double) {
     return PyObjAllocated.noAllocation(o.asPyFloat);
   } else if (o is String) {
-    return o.asPyBytes();
+    return o.asPyUnicode();
   } else if (o is List) {
     throw UnimplementedError();
   } else if (o is Map) {
     throw UnimplementedError();
   }
   throw UnimplementedError();
+}
+
+PyObjAllocated<NativeType> pyConvertDynamicAndAddToList(
+  value,
+  List<PyObjAllocated> pyObjs,
+) {
+  PyObjAllocated<NativeType>? converted;
+  try {
+    converted = pyConvertDynamic(value);
+  } on PackageDartpyException catch (e) {
+    if (converted != null) {
+      dartpyc.Py_DecRef(converted.pyObj);
+    }
+    throw PackageDartpyException(
+        'Failed while converting $value with error $e');
+  }
+  pyObjs.add(converted);
+  return converted;
 }
 
 /// Convers a python object back to a dart representation
@@ -59,11 +108,14 @@ Object? pyConvertBackDynamic(Pointer<PyObject> result) {
     final resultNameString =
         result.ref.ob_type.ref.tp_name.cast<Utf8>().toDartString();
     try {
-      switch (resultNameString) {
-        case 'str':
-          final res = dartpyc.PyUnicode_AsUTF8String(result).asString;
+      // TODO: add other conversions to _fromPyObjectConversions
+      if (_fromPyObjectConversions.containsKey(resultNameString)) {
+        final conversion = _fromPyObjectConversions[resultNameString];
+        if (conversion != null) {
+          final res = conversion(result);
           dartpyc.Py_DecRef(result);
           return res;
+        }
       }
     } on PackageDartpyException catch (_) {
       dartpyc.PyErr_Clear();

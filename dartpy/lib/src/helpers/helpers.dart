@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dartpy/src/ffi/gen.dart';
 import 'package:dartpy/src/ffi/utf32.dart';
+import 'package:dartpy/src/helpers/error.dart';
 import 'package:ffi/ffi.dart';
 
 import '../dartpy_base.dart';
@@ -10,24 +11,37 @@ import 'bool_functions.dart';
 
 export 'bool_functions.dart';
 export 'converters/converters.dart';
+export 'dart_py_object.dart';
 export 'error.dart';
 
 late Pointer<Utf32> _pprogramLoc, _pathString;
 
 String get _pythonPath => dartpyc.Py_GetPath().cast<Utf32>().toDartString();
 
+// TODO: change to ';' on windows
+String get _pathDelimiter => ':';
+
+Set<String> _customPathSegments = <String>{};
+
 void _ensureLatestPythonPath() {
   _ensureInitialized();
-  var pathString = '$_pythonPath:${Directory.current.absolute.path}';
-  if (pyLibLocation != null) {
-    pathString = '$pyLibLocation:$pathString';
-  }
+  print("[_ensureLatestPythonPath] got path: '$_pythonPath'");
+  final pathSegments = _pythonPath.split(_pathDelimiter).toSet();
+  pathSegments.addAll(_customPathSegments);
+  pathSegments.add(Directory.current.absolute.path);
+  pathSegments.add(pyLibLocation ?? '');
   final platformPythonPath = Platform.environment['PYTHONPATH'];
-  if (platformPythonPath != null) {
-    pathString += ':$platformPythonPath';
-  }
+  pathSegments.add(platformPythonPath ?? '');
+  final pathString =
+      pathSegments.where((element) => element.isNotEmpty).join(_pathDelimiter);
+  print("[_ensureLatestPythonPath] setting path to: '$pathString'");
   _pathString = pathString.toNativeUtf32();
   dartpyc.Py_SetPath(_pathString.cast<Int32>());
+}
+
+void addToPythonPath(String directory) {
+  _customPathSegments.add(directory);
+  _ensureLatestPythonPath();
 }
 
 /// Initializes the python runtime
@@ -45,6 +59,13 @@ void pyStart() {
 void _ensureInitialized() {
   if (!pyInitialized) {
     dartpyc.Py_Initialize();
+  }
+}
+
+/// Checks for python errors and throws a DartPyException in case there is one.
+void ensureNoPythonError() {
+  if (pyErrOccurred()) {
+    throw DartPyException.fetch();
   }
 }
 
@@ -96,6 +117,7 @@ class DartPyModule {
   final String moduleName;
   final Pointer<PyObject> _moduleRef;
   final Map<String, DartPyFunction> _functions = {};
+  final Map<String, DartPyClass> _classes = {};
 
   /// Gets a function from the module
   DartPyFunction getFunction(String name) {
@@ -120,6 +142,24 @@ class DartPyModule {
     }
   }
 
+  /// Gets a class from the module
+  DartPyClass getClass(String name) {
+    if (_classes.containsKey(name)) {
+      return _classes[name]!;
+    }
+    final className = name.toNativeUtf8();
+    final pClass =
+        dartpyc.PyObject_GetAttrString(_moduleRef, className.cast<Int8>());
+    malloc.free(className);
+    if (pClass != nullptr) {
+      _classes[name] = DartPyClass(name, pClass);
+      return _classes[name]!;
+    } else {
+      throw PackageDartpyException(
+          'Class $name not found in module $moduleName');
+    }
+  }
+
   /// Disposes the python module
   void dispose() {
     _moduleMap.remove(moduleName);
@@ -128,6 +168,57 @@ class DartPyModule {
     }
     _functions.clear();
     dartpyc.Py_DecRef(_moduleRef);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation inv) {
+    final invokeMethod = inv.memberName.toString();
+    // inv.memberName is a Symbol and the toString() == Symbol("foo")
+    return getFunction(
+            invokeMethod.substring('Symbol("'.length, invokeMethod.length - 2))
+        .call(inv.positionalArguments.cast<Object?>());
+  }
+}
+
+/// A dart representation for the python class
+class DartPyClass {
+  DartPyClass(this.className, this._classRef);
+
+  final String className;
+  final Pointer<PyObject> _classRef;
+  final Map<String, DartPyFunction> _functions = {};
+
+  /// Gets a function from the class
+  DartPyFunction getFunction(String name) {
+    if (_functions.containsKey(name)) {
+      return _functions[name]!;
+    }
+    final funcName = name.toNativeUtf8();
+    final pFunc =
+        dartpyc.PyObject_GetAttrString(_classRef, funcName.cast<Int8>());
+    malloc.free(funcName);
+    if (pFunc != nullptr) {
+      if (pFunc.isCallable) {
+        _functions[name] = DartPyFunction(pFunc);
+        return _functions[name]!;
+      } else {
+        dartpyc.Py_DecRef(pFunc);
+        throw PackageDartpyException('$name is not callable');
+      }
+    } else {
+      throw PackageDartpyException(
+          'Function $name not found in class $className');
+    }
+  }
+
+  /// Disposes the python class
+  void dispose() {
+    _moduleMap.remove(className);
+    for (final func in _functions.entries) {
+      func.value.dispose();
+    }
+    _functions.clear();
+    dartpyc.Py_DecRef(_classRef);
   }
 
   @override
@@ -166,36 +257,13 @@ class DartPyFunction {
 
 extension CallablePyObjectList on DartPyFunction {
   /// Calls the python function with dart args marshalled back and forth
-  Object call(List<Object?> args) {
-    final pArgs = dartpyc.PyTuple_New(args.length);
-    if (pArgs == nullptr) {
-      throw PackageDartpyException('Creating argument tuple failed');
-    }
-    final pyObjs = <PyObjAllocated>[];
-    for (var i = 0; i < args.length; i++) {
-      PyObjAllocated? arg;
-      try {
-        arg = pyConvertDynamic(args[i]);
-        dartpyc.PyTuple_SetItem(pArgs, i, arg.pyObj);
-      } on PackageDartpyException catch (e) {
-        if (arg != null) {
-          dartpyc.Py_DecRef(arg.pyObj);
-        }
-        dartpyc.Py_DecRef(pArgs);
-        throw PackageDartpyException(
-            'Failed while converting argument ${args[i]} with error $e');
-      }
-    }
-    final result = dartpyc.PyObject_CallObject(_function, pArgs);
-    pyObjs.forEach((p) => p.dealloc());
-    dartpyc.Py_DecRef(pArgs);
+  Object? call(List<Object?> args, {Map<String, Object?>? kwargs}) =>
+      DartPyObject.staticCall(_function, args: args, kwargs: kwargs);
 
-    // check for errors
-    final errorPtr = dartpyc.PyErr_Occurred();
-    if (errorPtr != nullptr) {
-      throw DartPyException(errorPtr);
-    }
-
-    return pyConvertBackDynamic(result)!;
-  }
+  /// Calls the python function with raw pyObject args and kwargs
+  Pointer<PyObject> rawCall({
+    List<Pointer<PyObject>>? args,
+    Map<String, Pointer<PyObject>>? kwargs,
+  }) =>
+      DartPyObject.staticRawCall(_function, args: args, kwargs: kwargs);
 }

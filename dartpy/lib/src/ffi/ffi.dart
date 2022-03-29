@@ -35,15 +35,15 @@ String _findLinux() {
 }
 
 String _findMacos() {
-  if (Directory('/usr/local/Frameworks/Python.framework/Versions/3.8')
-      .existsSync()) {
-    return '/usr/local/Frameworks/Python.framework/Versions/3.8/lib/libpython3.8.dylib';
-  } else if (Directory('/usr/local/Frameworks/Python.framework/Versions/3.9')
+  if (Directory('/usr/local/Frameworks/Python.framework/Versions/3.9')
       .existsSync()) {
     return '/usr/local/Frameworks/Python.framework/Versions/3.9/lib/libpython3.9.dylib';
+  } else if (Directory('/usr/local/Frameworks/Python.framework/Versions/3.8')
+      .existsSync()) {
+    return '/usr/local/Frameworks/Python.framework/Versions/3.8/lib/libpython3.8.dylib';
   }
   throw UnimplementedError(
-      'Macos python version not found, searched for Python 3.8 and 3.9, set pyLibLocation for custom install location');
+      'Macos python version not found, searched for Python 3.9 and 3.8, set pyLibLocation for custom install location');
 }
 
 String _findWindows() {

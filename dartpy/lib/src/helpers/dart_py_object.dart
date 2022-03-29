@@ -13,87 +13,110 @@ class DartPyObject {
   Pointer<PyObject> get pyObject => _pyObject;
 
   Pointer<PyObject> rawGetAttribute(String name) {
+    print("[rawGetAttribute] start");
     final result = dartpyc.PyObject_GetAttrString(
       _pyObject,
       name.toNativeUtf8().cast<Int8>(),
     );
+    if (result == nullptr) {
+      // check for errors
+      ensureNoPythonError();
+    }
+    print("[rawGetAttribute] done");
     return result;
   }
 
   T getAttribute<T>(String name) =>
       pyConvertBackDynamic(rawGetAttribute(name)) as T;
 
-  T call<T>(String name, {List<Object?>? args, Map<String, Object?>? kwargs}) {
-    final effectiveArgs = args ?? <Object?>[];
-    final effectiveKwargs = kwargs ?? <String, Object?>{};
+  static T staticCall<T>(Pointer<PyObject> callable,
+      {List<Object?>? args, Map<String, Object?>? kwargs}) {
+    final pyObjs = <PyObjAllocated>[];
 
     // prepare args
-    final pArgs = dartpyc.PyTuple_New(effectiveArgs.length);
+    final pArgs = args
+        ?.map((e) => pyConvertDynamicAndAddToList(e, pyObjs))
+        .map((e) => e.pyObj)
+        .toList();
+
+    // prepare kwargs
+    final pKwargs = kwargs?.map((key, value) =>
+        MapEntry(key, pyConvertDynamicAndAddToList(value, pyObjs).pyObj));
+
+    // call function
+    final result = staticRawCall(callable, args: pArgs, kwargs: pKwargs);
+    pyObjs.forEach((p) => p.dealloc());
+
+    return pyConvertBackDynamic(result)! as T;
+  }
+
+  T call<T>(String name, {List<Object?>? args, Map<String, Object?>? kwargs}) {
+    final callable = rawGetAttribute(name);
+    return staticCall(callable, args: args, kwargs: kwargs);
+  }
+
+  /// Calls the python function with raw pyObject args and kwargs
+  static Pointer<PyObject> staticRawCall(
+    Pointer<PyObject> callable, {
+    List<Pointer<PyObject>>? args,
+    Map<String, Pointer<PyObject>>? kwargs,
+  }) {
+    final pyKeys = <PyObjAllocated>[];
+
+    // prepare args
+    final argsLen = args?.length ?? 0;
+    final pArgs = dartpyc.PyTuple_New(argsLen);
     if (pArgs == nullptr) {
       throw PackageDartpyException('Creating argument tuple failed');
     }
-    final pyObjs = <PyObjAllocated<NativeType>>[];
-    for (var i = 0; i < effectiveArgs.length; i++) {
-      PyObjAllocated<NativeType>? arg;
-      try {
-        arg = pyConvertDynamic(effectiveArgs[i]);
-        dartpyc.PyTuple_SetItem(pArgs, i, arg.pyObj);
-      } on PackageDartpyException catch (e) {
-        if (arg != null) {
-          dartpyc.Py_DecRef(arg.pyObj);
-        }
-        dartpyc.Py_DecRef(pArgs);
-        throw PackageDartpyException(
-          'Failed while converting argument ${effectiveArgs[i]} with error $e',
-        );
-      }
+    for (var i = 0; i < argsLen; i++) {
+      dartpyc.PyTuple_SetItem(pArgs, i, args![i]);
     }
 
     // prepare kwargs
-    final pKwargs = dartpyc.PyDict_New();
-    if (pKwargs == nullptr) {
-      throw PackageDartpyException('Creating keyword argument dict failed');
-    }
-    for (final MapEntry<String, dynamic> kwarg in effectiveKwargs.entries) {
-      PyObjAllocated<NativeType>? kwargKey;
-      PyObjAllocated<NativeType>? kwargValue;
-      try {
-        kwargKey = pyConvertDynamic(kwarg.key);
-        kwargValue = pyConvertDynamic(kwarg.value);
-        dartpyc.PyDict_SetItem(pKwargs, kwargKey.pyObj, kwargValue.pyObj);
-      } on PackageDartpyException catch (e) {
-        if (kwargKey != null) {
-          dartpyc.Py_DecRef(kwargKey.pyObj);
-        }
-        if (kwargValue != null) {
-          dartpyc.Py_DecRef(kwargValue.pyObj);
-        }
-        dartpyc
-          ..Py_DecRef(pArgs)
-          ..Py_DecRef(pKwargs);
-        throw PackageDartpyException(
-          'Failed while converting keyword argument ${kwarg.key}: ${kwarg.value} with error $e',
-        );
+    late final Pointer<PyObject> pKwargs;
+    if (kwargs == null) {
+      pKwargs = nullptr;
+    } else {
+      pKwargs = dartpyc.PyDict_New();
+      if (pKwargs == nullptr) {
+        throw PackageDartpyException('Creating keyword argument dict failed');
+      }
+      for (final kwarg in kwargs.entries) {
+        final kwargKey = pyConvertDynamicAndAddToList(kwarg.key, pyKeys).pyObj;
+        dartpyc.PyDict_SetItem(pKwargs, kwargKey, kwarg.value);
       }
     }
 
     // call function
-    final function = rawGetAttribute(name);
-    final result = dartpyc.PyObject_Call(function, pArgs, pKwargs);
-
-    for (final p in pyObjs) {
-      p.dealloc();
+    final result = dartpyc.PyObject_Call(callable, pArgs, pKwargs);
+    pyKeys.forEach((p) => p.dealloc());
+    dartpyc.Py_DecRef(pArgs);
+    if (pKwargs != nullptr) {
+      dartpyc.Py_DecRef(pKwargs);
     }
-    dartpyc
-      ..Py_DecRef(pArgs)
-      ..Py_DecRef(pKwargs);
 
     // check for errors
-    final errorPtr = dartpyc.PyErr_Occurred();
-    if (errorPtr != nullptr) {
-      throw DartPyException(errorPtr);
-    }
+    ensureNoPythonError();
 
-    return pyConvertBackDynamic(result) as T;
+    return result;
+  }
+
+  /// Calls the python function with raw pyObject args and kwargs
+  Pointer<PyObject> rawCall(
+    String name, {
+    List<Pointer<PyObject>>? args,
+    Map<String, Pointer<PyObject>>? kwargs,
+  }) {
+    print("[rawCall] start");
+    print("[rawCall] converting name $name to callable");
+    final callable = rawGetAttribute(name);
+    print(
+        "[rawCall] converted name $name to callable@${callable.address.toRadixString(16)}");
+    print("[rawCall] executing staticRawCall");
+    final result = staticRawCall(callable, args: args, kwargs: kwargs);
+    print("[rawCall] executed staticRawCall");
+    print("[rawCall] done");
+    return result;
   }
 }
