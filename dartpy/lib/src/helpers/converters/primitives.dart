@@ -114,13 +114,22 @@ extension PrimitivesConversion on Pointer<PyObject> {
     final res = dartpyc.PyBytes_AsString(this);
 
     // check for errors
-    ensureNoPythonError();
+    try {
+      ensureNoPythonError();
+    } on DartPyException catch (e) {
+      throw PackageDartpyException('Error in converting to a dart String: $e');
+    }
 
     if (!pyErrOccurred()) {
       dartpyc.Py_DecRef(this);
-      final str = res.cast<Utf8>().toDartString();
-      print("converted to: $str");
-      return str;
+      try {
+        final str = res.cast<Utf8>().toDartString();
+        print("converted to: $str");
+        return str;
+      } on FormatException catch (e) {
+        throw PackageDartpyException(
+            'Error in converting to a dart String: $e');
+      }
     }
     throw PackageDartpyException('Error in converting to a dart String');
   }
