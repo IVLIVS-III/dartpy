@@ -88,13 +88,21 @@ class DartPyObject {
       }
     }
 
+    print("[staticRawCall] prepared kwargs");
+
     // call function
+    print("[staticRawCall] calling function@${callable.address.toRadixString(16)}");
     final result = dartpyc.PyObject_Call(callable, pArgs, pKwargs);
+    print("[staticRawCall] called function@${callable.address.toRadixString(16)}");
     pyKeys.forEach((p) => p.dealloc());
+    print("[staticRawCall] dealloced keys");
     dartpyc.Py_DecRef(pArgs);
+    print("[staticRawCall] decref-ed pArgs");
     if (pKwargs != nullptr) {
       dartpyc.Py_DecRef(pKwargs);
+      print("[staticRawCall] decref-ed pKwargs");
     }
+
 
     // check for errors
     ensureNoPythonError();

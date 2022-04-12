@@ -23,6 +23,8 @@ String get _pathDelimiter => ':';
 
 Set<String> _customPathSegments = <String>{};
 
+String? customPackagesPath;
+
 void _ensureLatestPythonPath() {
   _ensureInitialized();
   print("[_ensureLatestPythonPath] got path: '$_pythonPath'");
@@ -39,6 +41,28 @@ void _ensureLatestPythonPath() {
   dartpyc.Py_SetPath(_pathString.cast<Int32>());
 }
 
+void _ensureCustomPackagesPath() {
+  _ensureInitialized();
+  print("[_ensureCustomPackagesPath] got packages path: '$customPackagesPath'");
+  if (customPackagesPath != null) {
+    // imports sys python module
+    final pyModule = pyImport('sys');
+    print(
+        "[_ensureCustomPackagesPath] imported module sys @${pyModule._moduleRef.address.toRadixString(16)}");
+    final pySysPath = dartpyc.PyObject_GetAttrString(
+      pyModule._moduleRef,
+      'path'.toNativeUtf8().cast<Int8>(),
+    );
+    print(
+        "[_ensureCustomPackagesPath] got sys.path @${pySysPath.address.toRadixString(16)}");
+    dartpyc.PyList_Append(
+      pySysPath,
+      pyConvertDynamic(customPackagesPath).pyObj,
+    );
+    print("[_ensureCustomPackagesPath] done");
+  }
+}
+
 void addToPythonPath(String directory) {
   _customPathSegments.add(directory);
   _ensureLatestPythonPath();
@@ -46,14 +70,22 @@ void addToPythonPath(String directory) {
 
 /// Initializes the python runtime
 void pyStart() {
+  print("[pyStart] start");
   _pprogramLoc = 'python3'.toNativeUtf32();
+  print("[pyStart] set _pprogramLoc");
   dartpyc.Py_SetProgramName(_pprogramLoc.cast<Int32>());
+  print("[pyStart] set program name");
   dartpyc.Py_Initialize();
+  print("[pyStart] called PyInitialize");
   _ensureLatestPythonPath();
+  print("[pyStart] ensured latest python path");
+  _ensureCustomPackagesPath();
+  print("[pyStart] ensured custom packages path");
   if (pyErrOccurred()) {
     print('Error during initialization');
   }
   _ensureInitialized();
+  print("[pyStart] ensured initialized");
 }
 
 void _ensureInitialized() {
@@ -64,9 +96,11 @@ void _ensureInitialized() {
 
 /// Checks for python errors and throws a DartPyException in case there is one.
 void ensureNoPythonError() {
+  print("[ensureNoPythonError] start");
   if (pyErrOccurred()) {
     throw DartPyException.fetch();
   }
+  print("[ensureNoPythonError] done");
 }
 
 /// Cleans up the memory of the loaded modules
@@ -253,6 +287,19 @@ class DartPyFunction {
     }
     _argumentAllocations.clear();
   }
+}
+
+extension CallableClassPyObjectList on DartPyClass {
+  /// Calls the python class (constructor) with dart args marshalled back and forth
+  Object? call(List<Object?> args, {Map<String, Object?>? kwargs}) =>
+      DartPyObject.staticCall(_classRef, args: args, kwargs: kwargs);
+
+  /// Calls the python class (constructor) with raw pyObject args and kwargs
+  Pointer<PyObject> rawCall({
+    List<Pointer<PyObject>>? args,
+    Map<String, Pointer<PyObject>>? kwargs,
+  }) =>
+      DartPyObject.staticRawCall(_classRef, args: args, kwargs: kwargs);
 }
 
 extension CallablePyObjectList on DartPyFunction {
