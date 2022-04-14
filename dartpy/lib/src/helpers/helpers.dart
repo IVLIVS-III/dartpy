@@ -16,7 +16,7 @@ export 'error.dart';
 
 late Pointer<Utf32> _pprogramLoc, _pathString;
 
-String get _pythonPath => dartpyc.Py_GetPath().cast<Utf32>().toDartString();
+String get _pythonPath => dartpyc.Py_GetPath().cast<Utf8>().toDartString();
 
 // TODO: change to ';' on windows
 String get _pathDelimiter => ':';
